@@ -608,6 +608,43 @@
     margin: 8px 0;
   }
 
+
+  /* ── EXIT TIMING + SCANNER ── */
+  .timing-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 12px;
+    font-size: 10px;
+    line-height: 1.65;
+  }
+  .timing-head {
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    margin-bottom:8px;
+  }
+  .timing-label { color:var(--dim); letter-spacing:.1em; text-transform:uppercase; }
+  .timing-status { font-family:var(--font-sans); font-weight:800; }
+  .scanner-table { width:100%; border-collapse:collapse; }
+  .scanner-table th {
+    font-size:9px; color:var(--dim); letter-spacing:.1em; text-transform:uppercase;
+    text-align:left; padding:7px 8px; border-bottom:1px solid var(--border);
+  }
+  .scanner-table td {
+    font-size:10px; padding:9px 8px; border-bottom:1px solid rgba(26,34,53,.55);
+    vertical-align:top;
+  }
+  .scanner-table tr:last-child td { border-bottom:none; }
+
+  .stress-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; }
+  .stress-card { background:var(--bg); border:1px solid var(--border); padding:10px; font-size:10px; line-height:1.55; }
+  .stress-card strong { font-family:var(--font-sans); font-size:12px; }
+  .mini-pill { display:inline-block; padding:2px 6px; border-radius:2px; font-size:9px; letter-spacing:.06em; margin-top:5px; }
+  @media (max-width: 900px) { .stress-grid { grid-template-columns:1fr 1fr; } }
+  @media (max-width: 600px) { .stress-grid { grid-template-columns:1fr; } }
+  .score-pill {
+    display:inline-block; min-width:44px; text-align:center; padding:3px 7px;
+    border-radius:2px; font-family:var(--font-sans); font-weight:800; font-size:12px;
+  }
+
   /* ── RESPONSIVE ── */
   @media (max-width: 1100px) {
     .dashboard-grid { grid-template-columns: 1fr 1fr; }
@@ -723,6 +760,40 @@
       </div>
     </div>
 
+    <!-- EXIT TIMING -->
+    <div class="panel" style="grid-column: 1 / 2;">
+      <div class="panel-header">
+        <div class="panel-title">Exit Timing</div>
+        <div id="exit-timing-badge" class="panel-badge badge-dim">LOADING</div>
+      </div>
+      <div class="panel-body" id="exit-timing-panel">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- PAIR SCANNER -->
+    <div class="panel" style="grid-column: 2 / 4;">
+      <div class="panel-header">
+        <div class="panel-title">Best Trades Across Pairs</div>
+        <div id="scanner-badge" class="panel-badge badge-dim">HEURISTIC</div>
+      </div>
+      <div class="panel-body" id="scanner-panel">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+
+    <!-- STRESS TEST / MISSING INDICATORS -->
+    <div class="panel" style="grid-column: 1 / 4;">
+      <div class="panel-header">
+        <div class="panel-title">Stress Test · Missing Indicator Audit</div>
+        <div id="stress-badge" class="panel-badge badge-dim">AUDIT</div>
+      </div>
+      <div class="panel-body" id="stress-panel">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
   </div>
 </main>
 
@@ -732,7 +803,7 @@
 // ══════════════════════════════════════════════════════════════════
 let STATE = {
   apiKey: '', accountId: '', env: 'practice',
-  prices: {}, isDemo: false,
+  prices: {}, priceMeta: {}, pairData: {}, isDemo: false,
   weeklyBias: 'NEUTRAL',
   prevWeekHigh: 0, prevWeekLow: 0, weeklyOpen: 0,
   pdh: 0, pdl: 0, prevDayClose: 0, dailyOpen: 0,
@@ -807,10 +878,15 @@ async function fetchPrices() {
   if (!res.ok) throw new Error(`OANDA error ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const prices = {};
+  const meta = {};
   data.prices.forEach(p => {
-    const mid = (parseFloat(p.asks[0].price) + parseFloat(p.bids[0].price)) / 2;
+    const ask = parseFloat(p.asks[0].price);
+    const bid = parseFloat(p.bids[0].price);
+    const mid = (ask + bid) / 2;
     prices[p.instrument] = mid;
+    meta[p.instrument] = { bid, ask, spread: ask - bid, time: p.time };
   });
+  STATE.priceMeta = meta;
   return prices;
 }
 
@@ -859,6 +935,79 @@ function calcATR(candles, period=14) {
   return slice.length ? slice.reduce((a,b)=>a+b,0)/slice.length : 0;
 }
 
+function pipFactor(instrument) { return instrument.includes('JPY') ? 100 : 10000; }
+function avg(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+function ema(values, period) {
+  if (!values || values.length < period) return null;
+  const k = 2 / (period + 1);
+  let e = avg(values.slice(0, period));
+  for (let i=period; i<values.length; i++) e = values[i] * k + e * (1-k);
+  return e;
+}
+function calcRSI(values, period=14) {
+  if (!values || values.length <= period) return null;
+  let gains=0, losses=0;
+  for (let i=1; i<=period; i++) { const d=values[i]-values[i-1]; if (d>=0) gains+=d; else losses-=d; }
+  let avgGain=gains/period, avgLoss=losses/period;
+  for (let i=period+1; i<values.length; i++) {
+    const d=values[i]-values[i-1];
+    avgGain = (avgGain*(period-1) + Math.max(d,0)) / period;
+    avgLoss = (avgLoss*(period-1) + Math.max(-d,0)) / period;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100/(1+rs));
+}
+function calcBollinger(values, period=20, mult=2) {
+  if (!values || values.length < period) return null;
+  const slice = values.slice(-period);
+  const m = avg(slice);
+  const sd = Math.sqrt(avg(slice.map(x => Math.pow(x-m, 2))));
+  return { mid:m, upper:m + mult*sd, lower:m - mult*sd, width:(mult*2*sd), pos: values[values.length-1] >= m ? (values[values.length-1]-m)/(mult*sd || 1) : -(m-values[values.length-1])/(mult*sd || 1) };
+}
+function buildPairData(instrument, daily=[], h1=[], h4=[], price=0) {
+  const pf = pipFactor(instrument);
+  const d = daily.filter(c => c && c.mid);
+  const h1c = h1.filter(c => c && c.mid);
+  const h4c = h4.filter(c => c && c.mid);
+  const closes1 = h1c.map(c=>mid(c,'c')).filter(Boolean);
+  const closes4 = h4c.map(c=>mid(c,'c')).filter(Boolean);
+  const today = d[d.length-1], prev = d[d.length-2];
+  const ranges = d.slice(-14).map(c => (mid(c,'h')-mid(c,'l'))*pf).filter(Boolean);
+  const atr1h = calcATR(h1c,14)*pf;
+  const atr4h = calcATR(h4c,14)*pf;
+  const e20 = ema(closes1,20), e50 = ema(closes1,50);
+  const e20h4 = ema(closes4,20), e50h4 = ema(closes4,50);
+  const rsi = calcRSI(closes1,14);
+  const bb = calcBollinger(closes1,20,2);
+  const adr = avg(ranges);
+  const todayRange = today ? (mid(today,'h')-mid(today,'l'))*pf : 0;
+  const trend = e20 && e50 && e20h4 && e50h4 ? ((e20>e50 && e20h4>e50h4) ? 'BULLISH' : (e20<e50 && e20h4<e50h4) ? 'BEARISH' : 'MIXED') : 'UNKNOWN';
+  return {
+    price, adr, todayRange, adrPct: adr ? Math.min(150, Math.round(todayRange/adr*100)) : 0,
+    atr1h, atr4h, pdh: prev?mid(prev,'h'):0, pdl: prev?mid(prev,'l'):0, dailyOpen: today?mid(today,'o'):0,
+    ema20:e20, ema50:e50, ema20h4:e20h4, ema50h4:e50h4, trend, rsi, bb,
+    spreadPips: STATE.priceMeta?.[instrument]?.spread ? STATE.priceMeta[instrument].spread*pf : 0,
+    staleSec: STATE.priceMeta?.[instrument]?.time ? Math.round((Date.now()-new Date(STATE.priceMeta[instrument].time).getTime())/1000) : 0
+  };
+}
+function nearestDistance(price, levels, pf=10000) {
+  const valid = levels.filter(x=>x && x.price);
+  if (!valid.length) return {name:'—', distance:9999, price:0};
+  return valid.map(x=>({...x, distance:Math.round(Math.abs(x.price-price)*pf)})).sort((a,b)=>a.distance-b.distance)[0];
+}
+function liquidityClusterScore(levels, price, pf=10000) {
+  const valid = levels.filter(x=>x && x.price);
+  let clusters = 0;
+  for (let i=0; i<valid.length; i++) {
+    for (let j=i+1; j<valid.length; j++) {
+      if (Math.abs(valid[i].price-valid[j].price)*pf <= 8) clusters++;
+    }
+  }
+  const near = valid.some(x => Math.abs(x.price-price)*pf <= 12);
+  return Math.min(25, clusters*8 + (near?7:0));
+}
+
 // ══════════════════════════════════════════════════════════════════
 // CONNECT
 // ══════════════════════════════════════════════════════════════════
@@ -889,6 +1038,14 @@ function loadDemo() {
   STATE.londonHigh = 1.3738; STATE.londonLow = 1.3675;
   STATE.nyMidnightOpen = 1.3705; STATE.atr4hPips = 16.4; STATE.atrStateDetailed = 'COMPRESSION';
   STATE.adr14 = 82; STATE.todayHigh = 1.3728; STATE.todayLow = 1.3681;
+  STATE.priceMeta = { 'USD_CAD': {spread:0.00012,time:new Date().toISOString()}, 'EUR_USD':{spread:0.00010,time:new Date().toISOString()}, 'GBP_USD':{spread:0.00014,time:new Date().toISOString()}, 'USD_JPY':{spread:0.012,time:new Date().toISOString()}, 'AUD_USD':{spread:0.00012,time:new Date().toISOString()} };
+  STATE.pairData = {
+    'USD_CAD': {price:1.37237, adr:82, todayRange:47, adrPct:57, atr1h:8.8, atr4h:16.4, trend:'MIXED', rsi:55, spreadPips:1.2, staleSec:0, bb:{pos:0.35,width:0.0018}, pdh:1.3740, pdl:1.3640},
+    'EUR_USD': {price:1.08640, adr:67, todayRange:36, adrPct:54, atr1h:7.2, atr4h:15.1, trend:'BEARISH', rsi:44, spreadPips:1.0, staleSec:0, bb:{pos:-0.28,width:0.0015}},
+    'GBP_USD': {price:1.26810, adr:86, todayRange:62, adrPct:72, atr1h:9.4, atr4h:22.0, trend:'MIXED', rsi:51, spreadPips:1.4, staleSec:0, bb:{pos:0.12,width:0.0021}},
+    'USD_JPY': {price:153.420, adr:102, todayRange:58, adrPct:57, atr1h:11.1, atr4h:26.5, trend:'BULLISH', rsi:61, spreadPips:1.2, staleSec:0, bb:{pos:0.62,width:0.23}},
+    'AUD_USD': {price:0.65380, adr:59, todayRange:31, adrPct:53, atr1h:6.1, atr4h:12.8, trend:'BEARISH', rsi:41, spreadPips:1.2, staleSec:0, bb:{pos:-0.45,width:0.0013}}
+  };
   document.getElementById('api-setup').style.display = 'none';
   renderAll();
 }
@@ -957,6 +1114,19 @@ async function loadDashboard() {
     const atrPctOfADR = STATE.atr4hPips / Math.max(adrPips, 1);
     STATE.atrStateDetailed = atrPctOfADR < 0.18 ? 'COMPRESSION' : atrPctOfADR < 0.28 ? 'LOW' : atrPctOfADR < 0.45 ? 'NORMAL' : 'EXPANDING';
 
+    // Cross-pair stress-test inputs: trend, RSI, Bollinger location, spread, ADR/ATR per pair.
+    const pairList = ['USD_CAD','EUR_USD','GBP_USD','USD_JPY','AUD_USD'];
+    const pairResults = await Promise.allSettled(pairList.map(async inst => {
+      const [d,h1p,h4p] = await Promise.all([
+        fetchCandles(inst, 20, 'D'),
+        fetchCandles(inst, 80, 'H1'),
+        fetchCandles(inst, 80, 'H4')
+      ]);
+      return [inst, buildPairData(inst, d, h1p, h4p, STATE.prices[inst] || 0)];
+    }));
+    STATE.pairData = {};
+    pairResults.forEach(r => { if (r.status === 'fulfilled') STATE.pairData[r.value[0]] = r.value[1]; });
+
     renderAll();
   } catch(e) {
     showError(e.message);
@@ -973,6 +1143,13 @@ async function refreshData() {
   if (!STATE.apiKey) return;
   try {
     STATE.prices = await fetchPrices();
+    Object.keys(STATE.pairData || {}).forEach(inst => {
+      if (STATE.prices[inst]) {
+        STATE.pairData[inst].price = STATE.prices[inst];
+        STATE.pairData[inst].spreadPips = STATE.priceMeta?.[inst]?.spread ? STATE.priceMeta[inst].spread * pipFactor(inst) : STATE.pairData[inst].spreadPips;
+        STATE.pairData[inst].staleSec = STATE.priceMeta?.[inst]?.time ? Math.round((Date.now()-new Date(STATE.priceMeta[inst].time).getTime())/1000) : STATE.pairData[inst].staleSec;
+      }
+    });
     renderAll();
   } catch(e) { showError(e.message); }
 }
@@ -1111,6 +1288,193 @@ function analyze() {
   const riskPips = 20;
   const setupType = inWindow ? (atrState === 'COMPRESSION' ? 'LATE LONDON FADE' : 'NY CONTINUATION') : 'MONITOR';
 
+  // Entry timing engine — tells the user WHEN to act, not just direction.
+  let timingStage = 'MONITOR';
+  let timingStatus = 'WAIT';
+  let timingColor = 'var(--yellow)';
+  let timingWindow = 'Outside premium entry window';
+  let timingTrigger = 'Wait for London/NY session liquidity event.';
+  let timingCancel = 'No entry if price stays mid-range or confirmation is wick-only.';
+
+  const nearestLevel = levels[0];
+  const nearestLevelText = nearestLevel ? `${nearestLevel.name} ${nearestLevel.price.toFixed(5)} (${nearestLevel.distance}p)` : 'No key level loaded';
+
+  if (pastCutoff) {
+    timingStage = 'LOCKED';
+    timingStatus = 'NO ENTRY';
+    timingColor = 'var(--red)';
+    timingWindow = 'Past 11:00 ET cutoff';
+    timingTrigger = 'Do not open new scalps. Manage or close existing exposure only.';
+    timingCancel = 'Any new entry after cutoff is invalid unless it is a pre-planned swing position.';
+  } else if (totalMin >= 420 && totalMin < 480) {
+    timingStage = 'LONDON CLOSE';
+    timingStatus = 'WATCH SWEEP';
+    timingColor = 'var(--yellow)';
+    timingWindow = '07:00–08:00 ET: London close / pre-NY liquidity build';
+    timingTrigger = direction === 'LONG'
+      ? 'Long only after sell-side sweep/reclaim of Asian/London low, then M1/M5 higher-low confirmation.'
+      : direction === 'SHORT'
+        ? 'Short only after buy-side sweep/reclaim of Asian/London high, then M1/M5 lower-high confirmation.'
+        : 'No directional edge yet — wait for NY to choose acceptance or rejection.';
+    timingCancel = 'Cancel if price breaks and accepts beyond the swept level instead of reclaiming.';
+  } else if (totalMin >= 480 && totalMin < 555) {
+    timingStage = 'NY OPEN';
+    timingStatus = passes >= 6 ? 'ARMED' : 'WAIT';
+    timingColor = passes >= 6 ? 'var(--green)' : 'var(--yellow)';
+    timingWindow = '08:00–09:15 ET: wait for first impulse, then retest/reclaim';
+    timingTrigger = direction === 'LONG'
+      ? 'Buy only after M1/M5 closes back above trigger level, retests, and holds. Avoid first spike.'
+      : direction === 'SHORT'
+        ? 'Sell only after M1/M5 closes back below trigger level, retests, and fails. Avoid first spike.'
+        : 'Stand by until weekly/macro bias becomes clear.';
+    timingCancel = 'Cancel if first NY move runs >15–20p without retest, or if spread widens/news hits.';
+  } else if (totalMin >= 555 && totalMin < 630) {
+    timingStage = 'NY CONFIRMATION';
+    timingStatus = passes >= 6 ? 'PULLBACK ONLY' : 'WAIT';
+    timingColor = passes >= 6 ? 'var(--green)' : 'var(--yellow)';
+    timingWindow = '09:15–10:30 ET: continuation only after retest';
+    timingTrigger = direction === 'LONG'
+      ? 'Long only on pullback into held structure/VWAP/key level with bullish M1/M5 rejection.'
+      : direction === 'SHORT'
+        ? 'Short only on pullback into failed structure/key level with bearish M1/M5 rejection.'
+        : 'No clean trade unless a new liquidity sweep creates a clear direction.';
+    timingCancel = 'Cancel if ADR is stretched, price is at TP zone, or candles overlap with no displacement.';
+  } else if (totalMin >= 630 && totalMin < 660) {
+    timingStage = 'LAST CALL';
+    timingStatus = 'A+ ONLY';
+    timingColor = 'var(--orange)';
+    timingWindow = '10:30–11:00 ET: last valid window';
+    timingTrigger = 'Only take an A+ continuation retest or clear liquidity sweep/reclaim. No mid-range entries.';
+    timingCancel = 'Cancel if confirmation takes more than 2–3 candles or price is not moving immediately.';
+  } else {
+    timingStage = 'PRE-SESSION';
+    timingStatus = 'MONITOR';
+    timingColor = 'var(--dim)';
+    timingWindow = 'Before London close / NY open decision window';
+    timingTrigger = 'Mark PDH/PDL, Asian H/L, London H/L, Weekly Open and wait for session reaction.';
+    timingCancel = 'No scalp before the session creates liquidity or acceptance.';
+  }
+
+  const entryTiming = {
+    stage: timingStage,
+    status: timingStatus,
+    color: timingColor,
+    window: timingWindow,
+    trigger: timingTrigger,
+    cancel: timingCancel,
+    nearestLevel: nearestLevelText
+  };
+
+
+  // Exit timing engine — manages the trade after entry.
+  let exitStatus = 'MANAGE';
+  let exitColor = 'var(--yellow)';
+  let exitAction = 'No active trade detected — prepare exit rules before entry.';
+  let exitPartial = 'TP1: take 50% at +1R or first key liquidity level.';
+  let exitStop = 'After TP1, move stop to breakeven only if price holds beyond entry structure.';
+  let exitFinal = 'TP2/TP3 only if M5/M15 candles keep closing in your direction.';
+  let exitEmergency = 'Exit early if price reclaims the swept level against you or ATR expansion flips against the setup.';
+
+  if (direction === '—' || verdict.includes('NO') || verdict === 'WAIT') {
+    exitStatus = 'NO POSITION';
+    exitColor = 'var(--dim)';
+    exitAction = 'Do not manage a trade that should not exist. Wait for a valid entry first.';
+    exitPartial = 'No partials — no confirmed position.';
+    exitStop = 'No stop movement — stay flat.';
+    exitFinal = 'No TP plan until direction and trigger are valid.';
+    exitEmergency = 'Cancel the idea if the dashboard remains conflicted.';
+  } else if (adrPct >= 85) {
+    exitStatus = 'FAST PROFITS';
+    exitColor = 'var(--orange)';
+    exitAction = 'ADR is stretched. Prioritize quick TP1/TP2 instead of holding for full extension.';
+    exitPartial = 'Take 50–70% at TP1 or nearest opposing session level.';
+    exitStop = 'Move stop to breakeven after TP1; do not give a stretched move back.';
+    exitFinal = 'Only hold runner if M5 closes cleanly beyond TP1 with no wick rejection.';
+    exitEmergency = 'Exit if price stalls for 2–3 M1 candles after touching TP1 zone.';
+  } else if (setupType === 'LATE LONDON FADE') {
+    exitStatus = 'FADE MANAGEMENT';
+    exitColor = 'var(--yellow)';
+    exitAction = 'Manage as mean reversion: pay yourself into VWAP/midpoint/session open.';
+    exitPartial = 'TP1 at NY Midnight Open / London midpoint / nearest internal liquidity.';
+    exitStop = 'After TP1, stop goes behind the lower high/higher low created after the sweep.';
+    exitFinal = 'TP2 at opposite side of London/Asian range only if rejection keeps expanding.';
+    exitEmergency = 'Exit immediately if price re-accepts above/below the swept liquidity level.';
+  } else if (setupType === 'NY CONTINUATION') {
+    exitStatus = 'LET IT WORK';
+    exitColor = 'var(--green)';
+    exitAction = 'Manage as continuation: do not cut early unless structure fails.';
+    exitPartial = 'TP1 at +1R or next external liquidity. Keep 30–50% for TP2.';
+    exitStop = 'After a clean TP1 close, trail behind last M5 higher low/lower high.';
+    exitFinal = 'TP2/TP3 at next session high/low or round-number liquidity.';
+    exitEmergency = 'Exit if continuation candle closes back inside the breakout/retest shelf.';
+  }
+
+  const exitTiming = {
+    status: exitStatus,
+    color: exitColor,
+    action: exitAction,
+    partial: exitPartial,
+    stop: exitStop,
+    final: exitFinal,
+    emergency: exitEmergency
+  };
+
+  // Cross-pair trade scanner — estimated quality score, not a guaranteed win probability.
+  // Stress-test upgrade: each pair now uses its own ADR, ATR, spread, H1/H4 EMA trend, RSI and Bollinger position.
+  const scannerPairs = [
+    { inst:'USD_CAD', pair:'USD/CAD', price:usdcad, macroBias: weeklyBias === 'BULLISH' ? 'LONG' : weeklyBias === 'BEARISH' ? 'SHORT' : 'WAIT', macro: (weeklyBias !== 'CONFLICTED' ? 18 : 4) + (wtiAligned ? 12 : wtiSignal === 'NEUTRAL' ? 5 : -12), note:'WTI-sensitive. Needs oil + USD not fighting each other.' },
+    { inst:'EUR_USD', pair:'EUR/USD', price:eurusd, macroBias: usdBias === 'BULLISH' ? 'SHORT' : usdBias === 'BEARISH' ? 'LONG' : 'WAIT', macro: usdBias !== 'MIXED' ? 24 : 6, note:'Best when USD basket is clean and EUR/USD trend agrees.' },
+    { inst:'GBP_USD', pair:'GBP/USD', price:gbpusd, macroBias: usdBias === 'BULLISH' ? 'SHORT' : usdBias === 'BEARISH' ? 'LONG' : 'WAIT', macro: usdBias !== 'MIXED' ? 21 : 5, note:'Higher volatility; avoid if spread or ADR is stretched.' },
+    { inst:'USD_JPY', pair:'USD/JPY', price:usdjpy, macroBias: usdBias === 'BULLISH' ? 'LONG' : usdBias === 'BEARISH' ? 'SHORT' : 'WAIT', macro: usdBias !== 'MIXED' ? 18 : 4, note:'Risk-sensitive. Watch yen reversal/intervention headlines manually.' },
+    { inst:'AUD_USD', pair:'AUD/USD', price:audusd, macroBias: usdBias === 'BULLISH' ? 'SHORT' : usdBias === 'BEARISH' ? 'LONG' : 'WAIT', macro: usdBias !== 'MIXED' ? 16 : 5, note:'Risk-sensitive. Best when risk tone agrees with USD.' },
+  ];
+
+  const sessionScore = inWindow ? 16 : (totalMin >= 420 && totalMin < 480 ? 12 : totalMin >= 630 && totalMin < 660 ? 5 : -6);
+  const tradeScanner = scannerPairs.map(x => {
+    const pd = STATE.pairData?.[x.inst] || {};
+    const direction = x.macroBias;
+    const trendAgree = direction === 'LONG' ? pd.trend === 'BULLISH' : direction === 'SHORT' ? pd.trend === 'BEARISH' : false;
+    const trendMixed = pd.trend === 'MIXED' || pd.trend === 'UNKNOWN' || !pd.trend;
+    const adrScore2 = !pd.adrPct ? 4 : pd.adrPct < 50 ? 14 : pd.adrPct < 75 ? 9 : pd.adrPct < 90 ? 1 : -16;
+    const spreadScore = !pd.spreadPips ? 0 : pd.spreadPips <= 1.5 ? 8 : pd.spreadPips <= 2.5 ? 2 : -14;
+    const trendScore = trendAgree ? 16 : trendMixed ? 3 : -18;
+    const rsiScore = !pd.rsi ? 0 : (direction === 'LONG' ? (pd.rsi > 52 && pd.rsi < 72 ? 9 : pd.rsi > 78 ? -8 : 1) : direction === 'SHORT' ? (pd.rsi < 48 && pd.rsi > 28 ? 9 : pd.rsi < 22 ? -8 : 1) : -8);
+    const bbScore = !pd.bb ? 0 : (Math.abs(pd.bb.pos) > 1.25 ? -8 : Math.abs(pd.bb.pos) > .75 ? 3 : 7);
+    const volScore2 = !pd.atr4h || !pd.adr ? 4 : (pd.atr4h/pd.adr < .18 ? 5 : pd.atr4h/pd.adr < .45 ? 10 : 7);
+    const spreadPenaltyText = pd.spreadPips > 2.5 ? 'Spread too wide — skip until normal.' : '';
+    let score = 32 + x.macro + sessionScore + adrScore2 + spreadScore + trendScore + rsiScore + bbScore + volScore2;
+    if (direction === 'WAIT') score -= 24;
+    if (pastCutoff) score -= 25;
+    if (pd.staleSec && pd.staleSec > 90) score -= 18;
+    score = Math.max(3, Math.min(91, Math.round(score)));
+    const quality = score >= 78 ? 'A' : score >= 68 ? 'B+' : score >= 58 ? 'B' : 'NO TRADE';
+    const trigger = direction === 'WAIT'
+      ? 'No trade until USD basket or pair structure confirms.'
+      : direction === 'LONG'
+        ? 'Long only after M1/M5 sweep-reclaim or breakout retest holds; avoid upper-band chase.'
+        : 'Short only after M1/M5 sweep-reclaim or failed retest confirms; avoid lower-band chase.';
+    const indicators = `Trend ${pd.trend || '—'} · RSI ${pd.rsi ? Math.round(pd.rsi) : '—'} · ADR ${pd.adrPct || 0}% · Spread ${(pd.spreadPips || 0).toFixed(1)}p`;
+    return {...x, direction, score, quality, trigger, indicators, spreadPenaltyText, data:pd};
+  }).sort((a,b) => b.score - a.score);
+
+  // Stress-test audit: what could make the dashboard wrong right now?
+  const usdcadData = STATE.pairData?.['USD_CAD'] || {};
+  const levelCluster = liquidityClusterScore(levels, usdcad, 10000);
+  const stressItems = [
+    { name:'Spread / execution cost', status: (usdcadData.spreadPips || 0) <= 1.5 ? 'PASS' : (usdcadData.spreadPips || 0) <= 2.5 ? 'CAUTION' : 'FAIL', value:`${(usdcadData.spreadPips || 0).toFixed(1)}p`, note:'Wide spreads make M1 scalps low-quality.' },
+    { name:'Data freshness', status: (usdcadData.staleSec || 0) <= 30 ? 'PASS' : (usdcadData.staleSec || 0) <= 90 ? 'CAUTION' : 'FAIL', value:`${usdcadData.staleSec || 0}s`, note:'Stale prices invalidate live timing.' },
+    { name:'H1/H4 trend filter', status: usdcadData.trend === weeklyBias ? 'PASS' : usdcadData.trend === 'MIXED' ? 'CAUTION' : 'FAIL', value: usdcadData.trend || '—', note:'Avoid scalping against both H1 and H4 trend.' },
+    { name:'Momentum / RSI', status: usdcadData.rsi > 28 && usdcadData.rsi < 72 ? 'PASS' : 'CAUTION', value: usdcadData.rsi ? Math.round(usdcadData.rsi) : '—', note:'Extreme RSI means wait for failure, not blind fade.' },
+    { name:'Bollinger location', status: usdcadData.bb && Math.abs(usdcadData.bb.pos) <= 1 ? 'PASS' : 'CAUTION', value: usdcadData.bb ? usdcadData.bb.pos.toFixed(2)+'σ' : '—', note:'Outside bands = no chase; wait for reclaim/retest.' },
+    { name:'Liquidity clustering', status: levelCluster >= 15 ? 'PASS' : levelCluster >= 7 ? 'CAUTION' : 'WAIT', value: `${levelCluster}/25`, note:'Best trades come near clustered PDH/PDL/session levels.' },
+    { name:'ADR room', status: adrPct < 75 ? 'PASS' : adrPct < 90 ? 'CAUTION' : 'FAIL', value: `${adrPct}%`, note:'Above 90% ADR, continuation risk/reward gets worse.' },
+    { name:'Macro conflict', status: wtiAligned || wtiSignal === 'NEUTRAL' ? 'PASS' : 'FAIL', value: wtiAligned ? 'Aligned' : 'Conflict', note:'WTI conflict reduces USD/CAD confidence.' }
+  ];
+  const fails = stressItems.filter(x=>x.status==='FAIL').length;
+  const cautions = stressItems.filter(x=>x.status==='CAUTION').length;
+  const stressVerdict = fails ? 'HIGH RISK' : cautions >= 3 ? 'SELECTIVE' : 'CLEAN ENOUGH';
+
+
   return {
     usdcad, eurusd, gbpusd, usdjpy, audusd, wti,
     usdBias, usdBull, usdBear,
@@ -1120,7 +1484,7 @@ function analyze() {
     atrRatio: atrRatio.toFixed(2), atrState, atrColor, atr4hPips: Math.round(STATE.atr4hPips || 0),
     levels, checks, passes, total,
     verdict, verdictColor, verdictSub,
-    direction, sl, tp1, tp2, riskPips, setupType,
+    direction, sl, tp1, tp2, riskPips, setupType, entryTiming, exitTiming, tradeScanner, stressItems, stressVerdict,
     inWindow, isThurFri, pastCutoff,
     eurSignal, gbpSignal, jpySignal
   };
@@ -1263,11 +1627,101 @@ function renderAll() {
           <span class="trade-val">${v}</span>
         </div>`).join('')}
     </div>
+
+    <div style="margin-top:14px;padding:12px;background:var(--bg);border:1px solid ${A.entryTiming.color};font-size:10px;line-height:1.65">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px">
+        <span style="color:var(--dim);letter-spacing:.1em;text-transform:uppercase">Entry Timing</span>
+        <span style="color:${A.entryTiming.color};font-family:var(--font-sans);font-weight:800">${A.entryTiming.status}</span>
+      </div>
+      <div style="color:var(--text);margin-bottom:5px"><strong>${A.entryTiming.stage}</strong> · ${A.entryTiming.window}</div>
+      <div style="color:var(--dim);margin-bottom:5px">Nearest liquidity/key level: <span style="color:var(--accent)">${A.entryTiming.nearestLevel}</span></div>
+      <div style="color:var(--text);margin-bottom:5px">Trigger: ${A.entryTiming.trigger}</div>
+      <div style="color:var(--red)">Cancel: ${A.entryTiming.cancel}</div>
+    </div>
+
     <div style="margin-top:14px;padding:10px;background:var(--bg);border:1px solid var(--border);font-size:10px;color:var(--dim);line-height:1.7">
-      ⚠ Entry requires 15M candle CLOSE confirmation.<br>
-      Stop must be structural — behind swing point.<br>
+      ⚠ Entry requires M1/M5 trigger + 15M candle context confirmation.<br>
+      Stop must be structural — behind sweep/retest swing point.<br>
       Max 3 scalp attempts. 2 losses in a row = done for today.
     </div>`;
+
+
+  // ── EXIT TIMING ───────────────────────────────────────────────
+  const exitBadge = document.getElementById('exit-timing-badge');
+  if (exitBadge) {
+    exitBadge.textContent = A.exitTiming.status;
+    exitBadge.className = `panel-badge ${A.exitTiming.color === 'var(--green)' ? 'badge-green' : A.exitTiming.color === 'var(--red)' ? 'badge-red' : A.exitTiming.color === 'var(--orange)' || A.exitTiming.color === 'var(--yellow)' ? 'badge-yellow' : 'badge-dim'}`;
+  }
+  const exitPanel = document.getElementById('exit-timing-panel');
+  if (exitPanel) {
+    exitPanel.innerHTML = `
+      <div class="timing-card" style="border-color:${A.exitTiming.color}">
+        <div class="timing-head">
+          <span class="timing-label">Exit Mode</span>
+          <span class="timing-status" style="color:${A.exitTiming.color}">${A.exitTiming.status}</span>
+        </div>
+        <div style="color:var(--text);margin-bottom:7px"><strong>Action:</strong> ${A.exitTiming.action}</div>
+        <div style="color:var(--dim);margin-bottom:6px"><strong style="color:var(--accent)">Partial:</strong> ${A.exitTiming.partial}</div>
+        <div style="color:var(--dim);margin-bottom:6px"><strong style="color:var(--yellow)">Stop:</strong> ${A.exitTiming.stop}</div>
+        <div style="color:var(--dim);margin-bottom:6px"><strong style="color:var(--green)">Runner:</strong> ${A.exitTiming.final}</div>
+        <div style="color:var(--red)"><strong>Emergency exit:</strong> ${A.exitTiming.emergency}</div>
+      </div>
+      <div style="margin-top:10px;font-size:9px;color:var(--dim);line-height:1.6">
+        Rule: exit timing is structure-based. Do not hold a scalp after the market closes back through the trigger shelf.
+      </div>`;
+  }
+
+  // ── CROSS-PAIR SCANNER ───────────────────────────────────────
+  const scannerPanel = document.getElementById('scanner-panel');
+  if (scannerPanel) {
+    const rows = A.tradeScanner.map(t => {
+      const scoreColor = t.score >= 75 ? 'var(--green)' : t.score >= 65 ? 'var(--yellow)' : t.score >= 55 ? 'var(--orange)' : 'var(--dim)';
+      const dirColor2 = t.direction === 'LONG' ? 'var(--green)' : t.direction === 'SHORT' ? 'var(--red)' : 'var(--dim)';
+      return `<tr>
+        <td><strong style="color:var(--text)">${t.pair}</strong><br><span style="color:var(--dim)">${Number(t.price).toFixed(t.pair === 'USD/JPY' ? 3 : t.pair === 'WTI' ? 2 : 5)}</span></td>
+        <td><span style="color:${dirColor2};font-family:var(--font-sans);font-weight:800">${t.direction}</span><br><span style="color:var(--dim)">${t.quality}</span></td>
+        <td><span class="score-pill" style="background:rgba(255,255,255,.04);border:1px solid ${scoreColor};color:${scoreColor}">${t.score}%</span></td>
+        <td><span style="color:var(--text)">${t.trigger}</span><br><span style="color:var(--dim)">${t.indicators}</span><br><span style="color:var(--dim)">${t.note} ${t.spreadPenaltyText}</span></td>
+      </tr>`;
+    }).join('');
+    const best = A.tradeScanner[0];
+    const bestText = best ? `${best.pair} ${best.direction} · ${best.score}%` : 'No scan available';
+    const badge = document.getElementById('scanner-badge');
+    if (badge) badge.textContent = best && best.score >= 65 ? 'BEST: ' + best.pair : 'NO A SETUP';
+    scannerPanel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:var(--bg);border:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--dim);line-height:1.5">Best current candidate<br><span style="font-family:var(--font-sans);font-size:16px;font-weight:800;color:var(--accent)">${bestText}</span></div>
+        <div style="font-size:9px;color:var(--dim);max-width:310px;line-height:1.5">Percent is a rules-based confidence estimate, not a statistical guarantee. Treat anything below 65% as no-trade unless your chart confirms an A setup.</div>
+      </div>
+      <table class="scanner-table">
+        <thead><tr><th>Pair</th><th>Bias</th><th>Score</th><th>Required Trigger</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+
+  // ── STRESS TEST / MISSING INDICATOR AUDIT ─────────────────────
+  const stressPanel = document.getElementById('stress-panel');
+  if (stressPanel) {
+    const stressBadge = document.getElementById('stress-badge');
+    if (stressBadge) {
+      stressBadge.textContent = A.stressVerdict;
+      stressBadge.className = `panel-badge ${A.stressVerdict === 'CLEAN ENOUGH' ? 'badge-green' : A.stressVerdict === 'SELECTIVE' ? 'badge-yellow' : 'badge-red'}`;
+    }
+    const cards = (A.stressItems || []).map(x => {
+      const c = x.status === 'PASS' ? 'var(--green)' : x.status === 'FAIL' ? 'var(--red)' : x.status === 'WAIT' ? 'var(--dim)' : 'var(--yellow)';
+      return `<div class="stress-card" style="border-left:2px solid ${c}">
+        <div style="display:flex;justify-content:space-between;gap:8px"><strong style="color:${c}">${x.status}</strong><span style="color:var(--accent)">${x.value}</span></div>
+        <div style="color:var(--text);margin-top:3px">${x.name}</div>
+        <div style="color:var(--dim);margin-top:4px">${x.note}</div>
+      </div>`;
+    }).join('');
+    stressPanel.innerHTML = `
+      <div style="font-size:10px;color:var(--dim);line-height:1.6;margin-bottom:10px">
+        Stress test added these missing filters: live spread, data freshness, H1/H4 EMA trend, RSI, Bollinger position, ADR room, pair-specific ATR/ADR, and liquidity clustering. This is still a decision-support score, not an automated signal.
+      </div>
+      <div class="stress-grid">${cards}</div>`;
+  }
 
   // ── CHECKLIST ─────────────────────────────────────────────────
   const checkHtml = A.checks.map(c => {
