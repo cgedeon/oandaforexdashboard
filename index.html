@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FX Session Trader — Live Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #080C10;
+    --panel:     #0D1219;
+    --border:    #1A2235;
+    --accent:    #00E5FF;
+    --accent2:   #0077FF;
+    --green:     #00E676;
+    --red:       #FF3D57;
+    --yellow:    #FFD600;
+    --orange:    #FF8C00;
+    --purple:    #7C4DFF;
+    --text:      #C8D8E8;
+    --dim:       #4A6080;
+    --font-mono: 'Space Mono', monospace;
+    --font-sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid noise texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── TOP BAR ── */
+  header {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px;
+    height: 52px;
+    background: rgba(8,12,16,0.95);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+  }
+
+  .logo {
+    font-family: var(--font-sans);
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  .logo span { color: var(--dim); }
+
+  .header-right { display: flex; align-items: center; gap: 20px; }
+
+  #clock {
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: 0.05em;
+  }
+
+  #session-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 3px 10px;
+    border-radius: 2px;
+    text-transform: uppercase;
+  }
+
+  .badge-green  { background: rgba(0,230,118,0.15); color: var(--green); border: 1px solid rgba(0,230,118,0.3); }
+  .badge-yellow { background: rgba(255,214,0,0.12);  color: var(--yellow); border: 1px solid rgba(255,214,0,0.3); }
+  .badge-red    { background: rgba(255,61,87,0.12);  color: var(--red);  border: 1px solid rgba(255,61,87,0.3); }
+  .badge-dim    { background: rgba(74,96,128,0.15);  color: var(--dim);  border: 1px solid rgba(74,96,128,0.3); }
+
+  /* API Key input */
+  #api-setup {
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(8,12,16,0.97);
+    backdrop-filter: blur(20px);
+  }
+
+  .setup-box {
+    width: 480px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 40px;
+  }
+
+  .setup-box h2 {
+    font-family: var(--font-sans);
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--accent);
+    margin-bottom: 8px;
+    letter-spacing: 0.04em;
+  }
+
+  .setup-box p {
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.7;
+    margin-bottom: 24px;
+  }
+
+  .setup-box a { color: var(--accent); }
+
+  .field-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .setup-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .setup-input:focus { border-color: var(--accent); }
+
+  .env-select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 10px 14px;
+    margin-bottom: 20px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent2);
+    color: white;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+
+  .btn-primary:hover { background: var(--accent); color: var(--bg); }
+  .btn-primary:active { transform: scale(0.98); }
+
+  .demo-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    color: var(--dim);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    margin-top: 10px;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .demo-btn:hover { color: var(--text); border-color: var(--dim); }
+
+  /* ── MAIN LAYOUT ── */
+  main {
+    position: relative; z-index: 1;
+    padding: 20px 20px 40px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  /* ── PRICE TICKER STRIP ── */
+  .ticker-strip {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .ticker-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    position: relative;
+    overflow: hidden;
+    cursor: default;
+    transition: border-color 0.2s;
+  }
+
+  .ticker-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent2);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .ticker-card.primary::before { opacity: 1; background: var(--accent); }
+  .ticker-card:hover { border-color: var(--accent2); }
+
+  .ticker-pair {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    margin-bottom: 4px;
+  }
+
+  .ticker-price {
+    font-family: var(--font-sans);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .ticker-change {
+    font-size: 10px;
+    margin-top: 3px;
+  }
+
+  .up   { color: var(--green); }
+  .down { color: var(--red); }
+  .flat { color: var(--dim); }
+
+  .ticker-signal {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    margin-top: 6px;
+    padding: 2px 6px;
+    display: inline-block;
+    border-radius: 1px;
+  }
+
+  /* ── GRID ── */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 360px;
+    grid-template-rows: auto auto;
+    gap: 12px;
+  }
+
+  /* ── PANEL ── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-title {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .panel-badge {
+    font-size: 9px;
+    padding: 2px 8px;
+    letter-spacing: 0.08em;
+  }
+
+  .panel-body { padding: 16px; }
+
+  /* ── BIAS PANEL ── */
+  .bias-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .bias-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+  }
+
+  .bias-label {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .bias-value {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  /* ── SCORE BAR ── */
+  .score-section { margin-bottom: 14px; }
+
+  .score-label {
+    display: flex; justify-content: space-between;
+    font-size: 10px;
+    color: var(--dim);
+    margin-bottom: 5px;
+  }
+
+  .score-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+
+  .score-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.8s ease;
+  }
+
+  /* ── CHECKLIST ── */
+  .checklist { display: flex; flex-direction: column; gap: 6px; }
+
+  .check-item {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 11px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    transition: border-color 0.2s;
+  }
+
+  .check-item.pass  { border-left: 2px solid var(--green); }
+  .check-item.fail  { border-left: 2px solid var(--red); }
+  .check-item.warn  { border-left: 2px solid var(--yellow); }
+  .check-item.wait  { border-left: 2px solid var(--dim); }
+
+  .check-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot-pass   { background: var(--green); }
+  .dot-fail   { background: var(--red); }
+  .dot-warn   { background: var(--yellow); }
+  .dot-wait   { background: var(--dim); }
+
+  /* ── VERDICT BOX ── */
+  .verdict-box {
+    margin-top: 14px;
+    padding: 16px;
+    text-align: center;
+    border: 1px solid;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .verdict-box::before {
+    content: '';
+    position: absolute; inset: 0;
+    opacity: 0.06;
+  }
+
+  .verdict-label {
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    opacity: 0.7;
+  }
+
+  .verdict-text {
+    font-family: var(--font-sans);
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+
+  .verdict-sub {
+    font-size: 10px;
+    margin-top: 6px;
+    opacity: 0.6;
+  }
+
+  /* ── LEVELS TABLE ── */
+  .levels-table { width: 100%; border-collapse: collapse; }
+
+  .levels-table th {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    text-transform: uppercase;
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .levels-table td {
+    font-size: 11px;
+    padding: 8px;
+    border-bottom: 1px solid rgba(26,34,53,0.5);
+  }
+
+  .levels-table tr:last-child td { border-bottom: none; }
+
+  .levels-table tr:hover td { background: rgba(0,229,255,0.03); }
+
+  .level-name { color: var(--dim); font-size: 10px; }
+  .level-price { font-family: var(--font-sans); font-weight: 600; }
+  .level-dist { font-size: 10px; text-align: right; }
+
+  /* ── ADR/ATR METERS ── */
+  .meter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .meter-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 12px;
+  }
+
+  .meter-title {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .meter-value {
+    font-family: var(--font-sans);
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .meter-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+
+  .meter-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s ease;
+  }
+
+  .meter-sub { font-size: 9px; color: var(--dim); }
+
+  /* ── TRADE PLAN ── */
+  .trade-plan {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+
+  .trade-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(26,34,53,0.6);
+    font-size: 11px;
+  }
+
+  .trade-row:last-child { border-bottom: none; }
+
+  .trade-key { color: var(--dim); font-size: 10px; letter-spacing: 0.06em; }
+
+  .trade-val {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  /* ── LIVE INDICATOR ── */
+  .live-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+    margin-right: 6px;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── REFRESH BTN ── */
+  .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.06em;
+  }
+
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── STATUS BAR ── */
+  .status-bar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--dim);
+  }
+
+  .status-item { display: flex; align-items: center; gap: 5px; }
+
+  /* ── WTI SIGNAL ── */
+  .wti-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  /* ── NEWS STRIP ── */
+  .news-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+
+  .news-time { color: var(--dim); flex-shrink: 0; width: 45px; }
+  .news-impact {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .impact-high { background: var(--red); }
+  .impact-med  { background: var(--yellow); }
+  .impact-low  { background: var(--green); }
+
+  /* ── LOADING ── */
+  .loading {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px;
+    color: var(--dim);
+    padding: 20px;
+    justify-content: center;
+  }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-msg {
+    font-size: 10px;
+    color: var(--red);
+    padding: 12px;
+    border: 1px solid rgba(255,61,87,0.3);
+    background: rgba(255,61,87,0.05);
+    margin: 8px 0;
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 1100px) {
+    .dashboard-grid { grid-template-columns: 1fr 1fr; }
+    .trade-plan { grid-column: 1 / 3; grid-row: auto; }
+    .ticker-strip { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  @media (max-width: 700px) {
+    .ticker-strip { grid-template-columns: repeat(2, 1fr); }
+    .dashboard-grid { grid-template-columns: 1fr; }
+    .trade-plan { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+
+<!-- API SETUP MODAL -->
+<div id="api-setup">
+  <div class="setup-box">
+    <h2>FX SESSION TRADER</h2>
+    <p>
+      Connect your OANDA account for live price data. The dashboard will automatically
+      pull USD/CAD, WTI, EUR/USD, GBP/USD, and USD/JPY — then run the full system
+      checklist and generate a trade verdict.<br><br>
+      Get your API key at <a href="https://www.oanda.com/us-en/trading/fxtrade/" target="_blank">oanda.com</a>
+      → My Account → API Access. Use <strong>practice</strong> for demo or <strong>live</strong> for real account.
+    </p>
+
+    <div class="field-label">OANDA API Key</div>
+    <input type="password" class="setup-input" id="api-key-input"
+           placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-xxx">
+
+    <div class="field-label">Account ID</div>
+    <input type="text" class="setup-input" id="account-id-input"
+           placeholder="001-001-XXXXXXXX-001">
+
+    <div class="field-label">Environment</div>
+    <select class="env-select" id="env-select">
+      <option value="practice">Practice (Demo)</option>
+      <option value="live">Live</option>
+    </select>
+
+    <button class="btn-primary" onclick="connectOanda()">CONNECT & LOAD DASHBOARD</button>
+    <button class="demo-btn" onclick="loadDemo()">▶ Run with demo data (no API key needed)</button>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">FX<span>/</span>SESSION &nbsp;·&nbsp; USD/CAD</div>
+  <div class="header-right">
+    <div id="clock">--:-- ET</div>
+    <div id="session-badge" class="badge-dim">LOADING</div>
+    <button class="refresh-btn" onclick="refreshData()">↻ REFRESH</button>
+    <button class="refresh-btn" onclick="document.getElementById('api-setup').style.display='flex'">⚙ API</button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main>
+  <!-- TICKER STRIP -->
+  <div class="ticker-strip" id="ticker-strip">
+    <div class="loading"><div class="spinner"></div> Loading prices...</div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="dashboard-grid">
+
+    <!-- BIAS + CHECKLIST -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">System Bias</div>
+        <div id="bias-badge" class="panel-badge badge-dim">LOADING</div>
+      </div>
+      <div class="panel-body" id="bias-panel">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ADR / ATR / LEVELS -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">ADR · ATR · Key Levels</div>
+        <span id="last-update" style="font-size:9px;color:var(--dim)">—</span>
+      </div>
+      <div class="panel-body" id="metrics-panel">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- TRADE PLAN -->
+    <div class="panel trade-plan">
+      <div class="panel-header">
+        <div class="panel-title">Live Trade Plan</div>
+        <div class="live-dot"></div>
+      </div>
+      <div class="panel-body" id="trade-panel">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- CHECKLIST -->
+    <div class="panel" style="grid-column: 1 / 3;">
+      <div class="panel-header">
+        <div class="panel-title">Pre-Entry Checklist</div>
+        <div id="checklist-score" style="font-size:10px;color:var(--dim)">—</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="checklist-grid">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+        <div id="verdict-box-container"></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════
+let STATE = {
+  apiKey: '', accountId: '', env: 'practice',
+  prices: {}, isDemo: false,
+  weeklyBias: 'NEUTRAL',
+  prevWeekHigh: 0, prevWeekLow: 0, weeklyOpen: 0,
+};
+
+const PAIRS = ['USD_CAD','EUR_USD','GBP_USD','USD_JPY','AUD_USD','BCO_USD'];
+const PAIR_LABELS = {
+  'USD_CAD':'USD/CAD','EUR_USD':'EUR/USD','GBP_USD':'GBP/USD',
+  'USD_JPY':'USD/JPY','AUD_USD':'AUD/USD','BCO_USD':'WTI OIL'
+};
+
+// ══════════════════════════════════════════════════════════════════
+// CLOCK & SESSION
+// ══════════════════════════════════════════════════════════════════
+function updateClock() {
+  const now = new Date();
+  const et = new Date(now.toLocaleString('en-US', {timeZone:'America/New_York'}));
+  const h = String(et.getHours()).padStart(2,'0');
+  const m = String(et.getMinutes()).padStart(2,'0');
+  const s = String(et.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${h}:${m}:${s} ET`;
+
+  const hour = et.getHours(), min = et.getMinutes();
+  const totalMin = hour * 60 + min;
+  const day = et.getDay(); // 0=Sun, 6=Sat
+
+  let sessionText = '', sessionClass = 'badge-dim';
+
+  if (day === 0 || day === 6) {
+    sessionText = 'WEEKEND'; sessionClass = 'badge-dim';
+  } else if (day === 4) { // Thursday
+    sessionText = 'THU — TREND ONLY'; sessionClass = 'badge-yellow';
+  } else if (day === 5) { // Friday
+    sessionText = totalMin >= 600 ? 'FRI — NO TRADE' : 'FRI — TREND ONLY';
+    sessionClass = totalMin >= 600 ? 'badge-red' : 'badge-yellow';
+  } else if (totalMin >= 420 && totalMin < 510) {
+    sessionText = 'LONDON CLOSE'; sessionClass = 'badge-green';
+  } else if (totalMin >= 480 && totalMin < 630) {
+    sessionText = 'NY OPEN'; sessionClass = 'badge-green';
+  } else if (totalMin >= 630 && totalMin < 660) {
+    sessionText = 'NY MID — CAUTION'; sessionClass = 'badge-yellow';
+  } else if (totalMin >= 660) {
+    sessionText = 'AFTER 11ET — NO TRADE'; sessionClass = 'badge-red';
+  } else {
+    sessionText = 'PRE-SESSION'; sessionClass = 'badge-dim';
+  }
+
+  const badge = document.getElementById('session-badge');
+  badge.textContent = sessionText;
+  badge.className = `panel-badge ${sessionClass}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ══════════════════════════════════════════════════════════════════
+// OANDA API
+// ══════════════════════════════════════════════════════════════════
+function oandaHost() {
+  return STATE.env === 'practice'
+    ? 'https://api-fxpractice.oanda.com'
+    : 'https://api-fxtrade.oanda.com';
+}
+
+async function fetchPrices() {
+  const instruments = PAIRS.join(',');
+  const url = `${oandaHost()}/v3/accounts/${STATE.accountId}/pricing?instruments=${instruments}`;
+  const res = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${STATE.apiKey}`, 'Content-Type': 'application/json' }
+  });
+  if (!res.ok) throw new Error(`OANDA error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const prices = {};
+  data.prices.forEach(p => {
+    const mid = (parseFloat(p.asks[0].price) + parseFloat(p.bids[0].price)) / 2;
+    prices[p.instrument] = mid;
+  });
+  return prices;
+}
+
+async function fetchCandles(instrument, count=14, granularity='D') {
+  const url = `${oandaHost()}/v3/instruments/${instrument}/candles?count=${count}&granularity=${granularity}&price=M`;
+  const res = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${STATE.apiKey}` }
+  });
+  if (!res.ok) throw new Error(`Candles error ${res.status}`);
+  const data = await res.json();
+  return data.candles;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CONNECT
+// ══════════════════════════════════════════════════════════════════
+async function connectOanda() {
+  const key = document.getElementById('api-key-input').value.trim();
+  const acct = document.getElementById('account-id-input').value.trim();
+  const env = document.getElementById('env-select').value;
+
+  if (!key || !acct) { alert('Please enter both API key and Account ID'); return; }
+
+  STATE.apiKey = key; STATE.accountId = acct; STATE.env = env; STATE.isDemo = false;
+  document.getElementById('api-setup').style.display = 'none';
+  await loadDashboard();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DEMO DATA
+// ══════════════════════════════════════════════════════════════════
+function loadDemo() {
+  STATE.isDemo = true;
+  STATE.prices = {
+    'USD_CAD': 1.37237, 'EUR_USD': 1.08640, 'GBP_USD': 1.26810,
+    'USD_JPY': 153.420, 'AUD_USD': 0.65380, 'BCO_USD': 105.78
+  };
+  STATE.prevWeekHigh = 1.3820; STATE.prevWeekLow = 1.3640; STATE.weeklyOpen = 1.3710;
+  document.getElementById('api-setup').style.display = 'none';
+  renderAll();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// LOAD DASHBOARD
+// ══════════════════════════════════════════════════════════════════
+async function loadDashboard() {
+  try {
+    const [prices, candles] = await Promise.all([
+      fetchPrices(),
+      fetchCandles('USD_CAD', 14, 'D')
+    ]);
+    STATE.prices = prices;
+
+    // Calculate levels from candles
+    const closes = candles.map(c => parseFloat(c.mid.c));
+    const highs   = candles.map(c => parseFloat(c.mid.h));
+    const lows    = candles.map(c => parseFloat(c.mid.l));
+
+    // Previous week high/low (approx from daily candles)
+    STATE.prevWeekHigh = Math.max(...highs.slice(-7, -2));
+    STATE.prevWeekLow  = Math.min(...lows.slice(-7, -2));
+    STATE.weeklyOpen   = closes[closes.length - 7] || closes[0];
+
+    // ADR = avg of last 14 daily ranges
+    const ranges = candles.map(c => parseFloat(c.mid.h) - parseFloat(c.mid.l));
+    STATE.adr14 = (ranges.reduce((a,b) => a+b, 0) / ranges.length) * 10000;
+
+    // Today high/low
+    const todayCandles = await fetchCandles('USD_CAD', 1, 'D');
+    STATE.todayHigh = parseFloat(todayCandles[0]?.mid?.h || STATE.prices['USD_CAD']);
+    STATE.todayLow  = parseFloat(todayCandles[0]?.mid?.l || STATE.prices['USD_CAD']);
+
+    renderAll();
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+function showError(msg) {
+  document.getElementById('ticker-strip').innerHTML =
+    `<div class="error-msg" style="grid-column:1/-1">⚠ ${msg}<br><small>Check API key, account ID, and environment setting.</small></div>`;
+}
+
+async function refreshData() {
+  if (STATE.isDemo) { renderAll(); return; }
+  if (!STATE.apiKey) return;
+  try {
+    STATE.prices = await fetchPrices();
+    renderAll();
+  } catch(e) { showError(e.message); }
+}
+
+// Auto-refresh every 10 seconds
+setInterval(() => { if (STATE.apiKey || STATE.isDemo) refreshData(); }, 10000);
+
+// ══════════════════════════════════════════════════════════════════
+// ANALYSIS ENGINE
+// ══════════════════════════════════════════════════════════════════
+function analyze() {
+  const p = STATE.prices;
+  const usdcad = p['USD_CAD'] || 0;
+  const eurusd = p['EUR_USD'] || 0;
+  const gbpusd = p['GBP_USD'] || 0;
+  const usdjpy = p['USD_JPY'] || 0;
+  const audusd = p['AUD_USD'] || 0;
+  const wti    = p['BCO_USD'] || 0;
+
+  // Broad USD score (simplified: use distance from round levels as proxy)
+  // In real use EUR/USD down = USD up, GBP/USD down = USD up, USD/JPY up = USD up
+  // We approximate by checking if pairs are "high" or "low"
+  const eurSignal = eurusd < 1.0800 ? 'BULLISH_USD' : eurusd > 1.0950 ? 'BEARISH_USD' : 'NEUTRAL';
+  const gbpSignal = gbpusd < 1.2500 ? 'BULLISH_USD' : gbpusd > 1.2800 ? 'BEARISH_USD' : 'NEUTRAL';
+  const jpySignal = usdjpy > 152    ? 'BULLISH_USD' : usdjpy < 148    ? 'BEARISH_USD' : 'NEUTRAL';
+
+  let usdBull = 0, usdBear = 0;
+  [eurSignal, gbpSignal, jpySignal].forEach(s => {
+    if (s === 'BULLISH_USD') usdBull++;
+    else if (s === 'BEARISH_USD') usdBear++;
+  });
+
+  const usdBias = usdBull >= 2 ? 'BULLISH' : usdBear >= 2 ? 'BEARISH' : 'MIXED';
+
+  // WTI signal (higher oil = bearish USD/CAD)
+  const wtiSignal = wti > 100 ? 'BEARISH_USDCAD' : wti < 80 ? 'BULLISH_USDCAD' : 'NEUTRAL';
+  const wtiAligned = (wtiSignal === 'BEARISH_USDCAD' && usdBias === 'BEARISH') ||
+                     (wtiSignal === 'BULLISH_USDCAD' && usdBias === 'BULLISH');
+
+  // Weekly bias
+  const weeklyBias = usdcad > (STATE.weeklyOpen || usdcad)
+    ? (usdBias === 'BULLISH' ? 'BULLISH' : 'CONFLICTED')
+    : (usdBias === 'BEARISH' ? 'BEARISH' : 'CONFLICTED');
+
+  // ADR calc
+  const todayRange = ((STATE.todayHigh || usdcad) - (STATE.todayLow || usdcad)) * 10000;
+  const adr14 = STATE.adr14 || 80;
+  const adrPct = Math.min(Math.round((todayRange / adr14) * 100), 100);
+  const adrStatus = adrPct < 50 ? 'FULL SIZE' : adrPct < 75 ? 'REDUCE 25%' : adrPct < 90 ? 'FADES ONLY' : 'NO TRADE';
+  const adrColor = adrPct < 50 ? 'var(--green)' : adrPct < 75 ? 'var(--yellow)' : 'var(--red)';
+
+  // ATR (approximated from today range vs ADR)
+  const atrRatio = todayRange > 0 ? Math.min(todayRange / (adr14 * 0.5), 3) : 1;
+  const atrState = atrRatio < 0.5 ? 'COMPRESSION' : atrRatio < 0.8 ? 'LOW' :
+                   atrRatio < 1.2 ? 'NORMAL' : atrRatio < 1.8 ? 'ELEVATED' : 'EXPANDING';
+  const atrColor = atrState === 'NORMAL' ? 'var(--green)' : atrState === 'LOW' ? 'var(--accent)' :
+                   atrState === 'COMPRESSION' ? 'var(--yellow)' : 'var(--orange)';
+
+  // Key levels
+  const pwh = STATE.prevWeekHigh || (usdcad + 0.015);
+  const pwl = STATE.prevWeekLow  || (usdcad - 0.015);
+  const wo  = STATE.weeklyOpen   || usdcad;
+
+  const levels = [
+    { name: 'Prev Week High', price: pwh, type: 'resistance' },
+    { name: 'Prev Week Low',  price: pwl, type: 'support' },
+    { name: 'Weekly Open',    price: wo,  type: 'pivot' },
+  ].sort((a,b) => Math.abs(a.price - usdcad) - Math.abs(b.price - usdcad));
+
+  // Session time check
+  const now = new Date();
+  const et = new Date(now.toLocaleString('en-US', {timeZone:'America/New_York'}));
+  const totalMin = et.getHours() * 60 + et.getMinutes();
+  const day = et.getDay();
+  const inWindow = totalMin >= 480 && totalMin < 660;
+  const isThurFri = day >= 4;
+  const pastCutoff = totalMin >= 660;
+
+  // Checklist
+  const checks = [
+    { label: 'ADR below 75%',         pass: adrPct < 75,   warn: adrPct < 90 },
+    { label: 'WTI aligned with bias', pass: wtiAligned,    warn: wtiSignal === 'NEUTRAL' },
+    { label: 'Broad USD confirmed',   pass: usdBias !== 'MIXED', warn: false },
+    { label: 'In trading window',     pass: inWindow && !pastCutoff, warn: false },
+    { label: 'Not Thu/Fri scalp day', pass: !isThurFri,    warn: isThurFri },
+    { label: 'Before 11:00 ET cutoff',pass: !pastCutoff,   warn: false },
+    { label: 'Weekly bias clear',     pass: weeklyBias !== 'CONFLICTED', warn: weeklyBias === 'CONFLICTED' },
+    { label: 'WTI not opposing',      pass: wtiSignal !== 'BULLISH_USDCAD' || weeklyBias !== 'BEARISH',
+                                      warn: wtiSignal === 'NEUTRAL' },
+  ];
+
+  const passes = checks.filter(c => c.pass).length;
+  const total  = checks.length;
+
+  // Verdict
+  let verdict, verdictColor, verdictSub;
+  if (pastCutoff) {
+    verdict = 'NO TRADE'; verdictColor = 'var(--red)';
+    verdictSub = 'Past 11:00 ET cutoff';
+  } else if (isThurFri && day !== 4) {
+    verdict = 'TREND FOLLOW'; verdictColor = 'var(--yellow)';
+    verdictSub = 'Friday — close all scalps by 11 ET';
+  } else if (isThurFri) {
+    verdict = 'TREND FOLLOW'; verdictColor = 'var(--yellow)';
+    verdictSub = 'Thursday — no new scalps';
+  } else if (adrPct >= 90) {
+    verdict = 'STAND DOWN'; verdictColor = 'var(--red)';
+    verdictSub = 'ADR exhausted';
+  } else if (!wtiAligned && wtiSignal !== 'NEUTRAL') {
+    verdict = 'DO NOT TRADE'; verdictColor = 'var(--red)';
+    verdictSub = 'WTI opposing USD/CAD direction';
+  } else if (passes >= 6) {
+    verdict = 'TAKE IT'; verdictColor = 'var(--green)';
+    verdictSub = `${passes}/${total} checks pass · Confirm 15M trigger`;
+  } else if (passes >= 4) {
+    verdict = 'WAIT'; verdictColor = 'var(--yellow)';
+    verdictSub = `${passes}/${total} checks · Not all conditions met`;
+  } else {
+    verdict = 'NO EDGE TODAY'; verdictColor = 'var(--dim)';
+    verdictSub = 'Stay out — conditions not aligned';
+  }
+
+  // Trade plan
+  const direction = weeklyBias === 'BULLISH' ? 'LONG' : weeklyBias === 'BEARISH' ? 'SHORT' : '—';
+  const pipSize = 0.0001;
+  const entryZone = direction === 'LONG' ? usdcad : usdcad;
+  const sl = direction === 'LONG' ? usdcad - 0.0020 : direction === 'SHORT' ? usdcad + 0.0020 : 0;
+  const tp1 = direction === 'LONG' ? usdcad + 0.0010 : direction === 'SHORT' ? usdcad - 0.0010 : 0;
+  const tp2 = direction === 'LONG' ? usdcad + 0.0020 : direction === 'SHORT' ? usdcad - 0.0020 : 0;
+  const riskPips = 20;
+  const setupType = inWindow ? (atrState === 'COMPRESSION' ? 'LATE LONDON FADE' : 'NY CONTINUATION') : 'MONITOR';
+
+  return {
+    usdcad, eurusd, gbpusd, usdjpy, audusd, wti,
+    usdBias, usdBull, usdBear,
+    wtiSignal, wtiAligned,
+    weeklyBias,
+    adrPct, adrStatus, adrColor, adr14: Math.round(adr14),
+    atrRatio: atrRatio.toFixed(2), atrState, atrColor,
+    levels, checks, passes, total,
+    verdict, verdictColor, verdictSub,
+    direction, sl, tp1, tp2, riskPips, setupType,
+    inWindow, isThurFri, pastCutoff,
+    eurSignal, gbpSignal, jpySignal
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════════════════════════
+function fmt(val, digits=5) { return val.toFixed(digits); }
+function pips(a,b) { return Math.round(Math.abs(a-b)*10000); }
+
+function signalBadge(signal) {
+  if (signal === 'BULLISH_USD' || signal === 'BULLISH_USDCAD') return `<span class="ticker-signal badge-green">USD BULL</span>`;
+  if (signal === 'BEARISH_USD' || signal === 'BEARISH_USDCAD') return `<span class="ticker-signal badge-red">USD BEAR</span>`;
+  return `<span class="ticker-signal badge-dim">NEUTRAL</span>`;
+}
+
+function renderAll() {
+  const A = analyze();
+
+  // UPDATE TIME
+  document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York', hour:'2-digit',minute:'2-digit'}) + ' ET';
+
+  // ── TICKER ────────────────────────────────────────────────────
+  const tickerData = [
+    { key: 'USD_CAD', label: 'USD/CAD', signal: A.weeklyBias, primary: true, digits: 5 },
+    { key: 'BCO_USD', label: 'WTI OIL', signal: A.wtiSignal, primary: false, digits: 2 },
+    { key: 'EUR_USD', label: 'EUR/USD', signal: A.eurSignal, primary: false, digits: 5 },
+    { key: 'GBP_USD', label: 'GBP/USD', signal: A.gbpSignal, primary: false, digits: 5 },
+    { key: 'USD_JPY', label: 'USD/JPY', signal: A.jpySignal, primary: false, digits: 3 },
+    { key: 'AUD_USD', label: 'AUD/USD', signal: 'NEUTRAL', primary: false, digits: 5 },
+  ];
+
+  document.getElementById('ticker-strip').innerHTML = tickerData.map(t => {
+    const price = STATE.prices[t.key] || 0;
+    const sig = t.signal;
+    const sigClass = sig.includes('BULL') ? 'badge-green' : sig.includes('BEAR') ? 'badge-red' : 'badge-dim';
+    const sigLabel = sig.includes('BULL') ? '▲ BULLISH' : sig.includes('BEAR') ? '▼ BEARISH' : '— NEUTRAL';
+    return `
+      <div class="ticker-card ${t.primary?'primary':''}">
+        <div class="ticker-pair">${t.label}</div>
+        <div class="ticker-price">${price.toFixed(t.digits)}</div>
+        <div><span class="ticker-signal ${sigClass}">${sigLabel}</span></div>
+      </div>`;
+  }).join('');
+
+  // ── BIAS PANEL ────────────────────────────────────────────────
+  const biasColor = A.weeklyBias === 'BULLISH' ? 'var(--green)' :
+                    A.weeklyBias === 'BEARISH' ? 'var(--red)' : 'var(--yellow)';
+  const usdColor  = A.usdBias === 'BULLISH' ? 'var(--green)' :
+                    A.usdBias === 'BEARISH' ? 'var(--red)' : 'var(--yellow)';
+  const wtiColor  = A.wtiSignal.includes('BEARISH') ? 'var(--red)' :
+                    A.wtiSignal.includes('BULLISH') ? 'var(--green)' : 'var(--yellow)';
+
+  document.getElementById('bias-panel').innerHTML = `
+    <div class="bias-grid">
+      <div class="bias-item">
+        <div class="bias-label">Weekly Bias</div>
+        <div class="bias-value" style="color:${biasColor}">${A.weeklyBias}</div>
+      </div>
+      <div class="bias-item">
+        <div class="bias-label">Broad USD</div>
+        <div class="bias-value" style="color:${usdColor}">${A.usdBias} <span style="font-size:11px;color:var(--dim)">${A.usdBull}/3</span></div>
+      </div>
+      <div class="bias-item">
+        <div class="bias-label">WTI Signal</div>
+        <div class="bias-value" style="color:${wtiColor};font-size:12px">${A.wtiSignal.replace('_',' ')}</div>
+      </div>
+      <div class="bias-item">
+        <div class="bias-label">Setup Type</div>
+        <div class="bias-value" style="color:var(--accent);font-size:11px">${A.setupType}</div>
+      </div>
+    </div>
+
+    <div class="score-section">
+      <div class="score-label"><span>USD Basket Alignment</span><span>${A.usdBull}/3 bullish signals</span></div>
+      <div class="score-bar"><div class="score-fill" style="width:${(A.usdBull/3)*100}%;background:${usdColor}"></div></div>
+      <div class="score-label"><span>WTI / USD/CAD Alignment</span><span style="color:${A.wtiAligned?'var(--green)':'var(--red)'}">${A.wtiAligned?'ALIGNED':'CONFLICTED'}</span></div>
+      <div class="score-bar"><div class="score-fill" style="width:${A.wtiAligned?100:20}%;background:${A.wtiAligned?'var(--green)':'var(--red)'}"></div></div>
+      <div class="score-label"><span>System Readiness</span><span>${A.passes}/${A.total} checks</span></div>
+      <div class="score-bar"><div class="score-fill" style="width:${(A.passes/A.total)*100}%;background:var(--accent2)"></div></div>
+    </div>`;
+
+  const biasBadge = document.getElementById('bias-badge');
+  biasbadge.textContent = A.weeklyBias;
+  biasbadge.className = `panel-badge ${A.weeklyBias==='BULLISH'?'badge-green':A.weeklyBias==='BEARISH'?'badge-red':'badge-yellow'}`;
+
+  // ── METRICS PANEL ─────────────────────────────────────────────
+  const levelsHtml = A.levels.map(l => {
+    const dist = pips(l.price, A.usdcad);
+    const above = l.price > A.usdcad;
+    const col = l.type === 'resistance' ? 'var(--red)' : l.type === 'support' ? 'var(--green)' : 'var(--accent)';
+    return `<tr>
+      <td><span class="level-name">${l.name}</span></td>
+      <td><span class="level-price" style="color:${col}">${l.price.toFixed(5)}</span></td>
+      <td><span class="level-dist" style="color:var(--dim)">${above?'▲':'▼'} ${dist}p</span></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('metrics-panel').innerHTML = `
+    <div class="meter-grid" style="margin-bottom:14px">
+      <div class="meter-box">
+        <div class="meter-title">ADR Used</div>
+        <div class="meter-value" style="color:${A.adrColor}">${A.adrPct}%</div>
+        <div class="meter-bar"><div class="meter-fill" style="width:${A.adrPct}%;background:${A.adrColor}"></div></div>
+        <div class="meter-sub">${A.adrStatus} · 14d avg: ${A.adr14}p</div>
+      </div>
+      <div class="meter-box">
+        <div class="meter-title">ATR State</div>
+        <div class="meter-value" style="color:${A.atrColor};font-size:16px">${A.atrState}</div>
+        <div class="meter-bar"><div class="meter-fill" style="width:${Math.min(parseFloat(A.atrRatio)/2*100,100)}%;background:${A.atrColor}"></div></div>
+        <div class="meter-sub">Ratio: ${A.atrRatio}x average</div>
+      </div>
+    </div>
+    <table class="levels-table">
+      <thead><tr>
+        <th>Level</th><th>Price</th><th style="text-align:right">Distance</th>
+      </tr></thead>
+      <tbody>${levelsHtml}</tbody>
+    </table>`;
+
+  // ── TRADE PLAN ────────────────────────────────────────────────
+  const dirColor = A.direction === 'LONG' ? 'var(--green)' : A.direction === 'SHORT' ? 'var(--red)' : 'var(--dim)';
+  document.getElementById('trade-panel').innerHTML = `
+    <div>
+      ${[
+        ['Direction',   `<span style="color:${dirColor};font-size:16px;font-weight:800">${A.direction}</span>`],
+        ['Entry Zone',  `<span style="color:var(--text)">${fmt(A.usdcad)} ± 5p</span>`],
+        ['Stop Loss',   `<span style="color:var(--red)">${A.sl>0?fmt(A.sl):'—'}</span>`],
+        ['TP1 (50%)',   `<span style="color:var(--green)">${A.tp1>0?fmt(A.tp1):'—'}</span>`],
+        ['TP2 (50%)',   `<span style="color:var(--green)">${A.tp2>0?fmt(A.tp2):'—'}</span>`],
+        ['Risk',        `<span style="color:var(--yellow)">${A.riskPips} pips</span>`],
+        ['R:R (scalp)', `<span style="color:var(--accent)">1:2 minimum</span>`],
+        ['Lot Size',    `<span style="color:var(--text)">0.2 lots standard</span>`],
+        ['Setup',       `<span style="color:var(--accent);font-size:11px">${A.setupType}</span>`],
+        ['ADR Room',    `<span style="color:${A.adrColor}">${A.adrStatus}</span>`],
+      ].map(([k,v]) => `
+        <div class="trade-row">
+          <span class="trade-key">${k}</span>
+          <span class="trade-val">${v}</span>
+        </div>`).join('')}
+    </div>
+    <div style="margin-top:14px;padding:10px;background:var(--bg);border:1px solid var(--border);font-size:10px;color:var(--dim);line-height:1.7">
+      ⚠ Entry requires 15M candle CLOSE confirmation.<br>
+      Stop must be structural — behind swing point.<br>
+      Max 3 scalp attempts. 2 losses in a row = done for today.
+    </div>`;
+
+  // ── CHECKLIST ─────────────────────────────────────────────────
+  const checkHtml = A.checks.map(c => {
+    const state = c.pass ? 'pass' : c.warn ? 'warn' : 'fail';
+    const dot   = c.pass ? 'dot-pass' : c.warn ? 'dot-warn' : 'dot-fail';
+    const icon  = c.pass ? '✔' : c.warn ? '⚠' : '✘';
+    return `<div class="check-item ${state}">
+      <div class="check-dot ${dot}"></div>
+      <span>${icon} ${c.label}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('checklist-grid').innerHTML = checkHtml;
+  document.getElementById('checklist-score').textContent = `${A.passes}/${A.total} critical checks`;
+
+  // ── VERDICT ───────────────────────────────────────────────────
+  document.getElementById('verdict-box-container').innerHTML = `
+    <div class="verdict-box" style="border-color:${A.verdictColor};margin-top:14px">
+      <div style="position:absolute;inset:0;background:${A.verdictColor};opacity:0.05;pointer-events:none"></div>
+      <div class="verdict-label" style="color:${A.verdictColor}">System Verdict</div>
+      <div class="verdict-text" style="color:${A.verdictColor}">${A.verdict}</div>
+      <div class="verdict-sub">${A.verdictSub}</div>
+    </div>`;
+}
+
+// Fix typo in biasbadge reference
+Object.defineProperty(window, 'biasbage', { get: () => document.getElementById('bias-badge') });
+</script>
+
+</body>
+</html>
